@@ -7,12 +7,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agent_elf.controller import RunController
+from agent_elf.document_import import MAX_UPLOAD_BYTES, DocumentImportError, extract_document
 from agent_elf.models import (
     KnowledgeCreate,
     KnowledgeToggle,
@@ -218,13 +219,36 @@ def create_app(
         if suffix not in {".txt", ".md", ".csv"}:
             raise HTTPException(
                 status_code=415,
-                detail="P0 仅支持 TXT、Markdown 与 CSV；不处理链接、PDF、Office 或图片。",
+                detail="文本接口仅支持 TXT、Markdown 与 CSV；PDF/DOCX 请使用文件上传。",
             )
         if "\x00" in filename or not filename:
             raise HTTPException(status_code=400, detail="文件名无效。")
         if len(request.content.encode("utf-8")) > 1_000_000:
             raise HTTPException(status_code=413, detail="单个知识文件不能超过 1 MB。")
         return store.add_knowledge(filename, suffix[1:], request.content)
+
+    @app.post("/api/knowledge/upload", status_code=201)
+    async def upload_knowledge(file: UploadFile = File(...)) -> dict[str, Any]:
+        filename = file.filename or ""
+        payload = bytearray()
+        try:
+            while chunk := await file.read(64 * 1024):
+                if len(payload) + len(chunk) > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="单个文档不能超过 20 MiB。")
+                payload.extend(chunk)
+        finally:
+            await file.close()
+
+        try:
+            document = extract_document(filename, bytes(payload))
+        except DocumentImportError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return store.add_knowledge(
+            document.filename,
+            document.file_type,
+            document.content,
+            document.source_metadata,
+        )
 
     @app.delete("/api/knowledge/{item_id}", status_code=204)
     def delete_knowledge(item_id: str) -> None:

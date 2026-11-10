@@ -66,8 +66,18 @@ export interface KnowledgeItem {
   id: string;
   filename: string;
   file_type: string;
+  source_metadata: KnowledgeSourceMetadata | null;
   enabled: number;
   created_at: string;
+}
+
+export interface KnowledgeSourceMetadata {
+  sha256: string;
+  source_size_bytes: number;
+  extraction_method: string;
+  extracted_bytes: number;
+  page_count?: number;
+  archive_entries?: number;
 }
 
 export interface SkillItem {

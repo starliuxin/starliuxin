@@ -10,10 +10,11 @@ import type {
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(path, {
     ...init,
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
   });
@@ -81,6 +82,11 @@ export const api = {
   knowledge: () => request<KnowledgeItem[]>("/api/knowledge"),
   addKnowledge: (filename: string, content: string) =>
     request<KnowledgeItem>("/api/knowledge", json({ filename, content })),
+  uploadKnowledge: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<KnowledgeItem>("/api/knowledge/upload", { method: "POST", body });
+  },
   deleteKnowledge: (id: string) =>
     request<void>(`/api/knowledge/${id}`, { method: "DELETE" }),
   toggleKnowledge: (id: string, enabled: boolean) =>
