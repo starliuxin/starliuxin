@@ -1139,6 +1139,25 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.file-name-copy {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-name-copy > span,
+.file-name-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-name-copy small {
+  margin-top: 3px;
+  color: #9aa095;
+  font-size: 8px;
+}
+
 .file-glyph {
   color: #8b9c76;
   font-size: 15px;

@@ -94,6 +94,7 @@ class StateStore:
                     filename TEXT NOT NULL,
                     file_type TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    source_metadata_json TEXT NOT NULL DEFAULT '{}',
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     deleted_at TEXT
@@ -109,6 +110,14 @@ class StateStore:
                 );
                 """
             )
+            knowledge_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(knowledge_items)")
+            }
+            if "source_metadata_json" not in knowledge_columns:
+                connection.execute(
+                    "ALTER TABLE knowledge_items ADD COLUMN source_metadata_json "
+                    "TEXT NOT NULL DEFAULT '{}'"
+                )
 
     def create_run(self, user_input: str, token_budget: int) -> dict[str, Any]:
         run_id = str(uuid.uuid4())
@@ -419,21 +428,30 @@ class StateStore:
             )
         return Requirement.model_validate(snapshot)
 
-    def add_knowledge(self, filename: str, file_type: str, content: str) -> dict[str, Any]:
+    def add_knowledge(
+        self,
+        filename: str,
+        file_type: str,
+        content: str,
+        source_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         item_id = str(uuid.uuid4())
         timestamp = _now()
+        metadata = source_metadata or {}
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO knowledge_items (id, filename, file_type, content, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO knowledge_items
+                    (id, filename, file_type, content, source_metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (item_id, filename, file_type, content, timestamp),
+                (item_id, filename, file_type, content, _json(metadata), timestamp),
             )
         return {
             "id": item_id,
             "filename": filename,
             "file_type": file_type,
+            "source_metadata": metadata or None,
             "enabled": True,
             "created_at": timestamp,
         }
@@ -442,11 +460,16 @@ class StateStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, filename, file_type, enabled, created_at
+                SELECT id, filename, file_type, source_metadata_json, enabled, created_at
                 FROM knowledge_items WHERE deleted_at IS NULL ORDER BY created_at DESC
                 """
             ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["source_metadata"] = json.loads(item.pop("source_metadata_json")) or None
+            result.append(item)
+        return result
 
     def enabled_knowledge(self) -> list[dict[str, Any]]:
         with self._connect() as connection:

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -50,5 +50,24 @@ describe("Agent Elf welcome screen", () => {
     expect(preview).not.toContain("<script");
     expect(preview).not.toContain("https://example.test");
     expect(preview).not.toContain('href="');
+  });
+
+  it("sends PDF uploads as multipart data", async () => {
+    render(<App />);
+    fireEvent.click(screen.getAllByRole("button", { name: "知识库" })[0]);
+    fireEvent.change(screen.getByLabelText(/选择一个本地文件/), {
+      target: {
+        files: [new File(["%PDF-1.4"], "reference.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() => {
+      const uploadCall = vi
+        .mocked(fetch)
+        .mock.calls.find(([input]) => String(input) === "/api/knowledge/upload");
+      expect(uploadCall).toBeDefined();
+      expect(uploadCall?.[1]?.body).toBeInstanceOf(FormData);
+      expect(uploadCall?.[1]?.headers).toEqual({});
+    });
   });
 });

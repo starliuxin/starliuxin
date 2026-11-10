@@ -149,7 +149,7 @@ function App() {
         <div className="rail-bottom">
           <span className="local-led" />
           本地工作区
-          <span className="rail-version">MVP · P0</span>
+          <span className="rail-version">MVP · P1</span>
         </div>
       </aside>
 
@@ -438,7 +438,19 @@ function KnowledgeView({ items, onChanged, onError }: KnowledgeViewProps) {
     if (!file) return;
     setBusy(true);
     try {
-      await api.addKnowledge(file.name, await file.text());
+      const filename = file.name.toLowerCase();
+      const isDocument = filename.endsWith(".pdf") || filename.endsWith(".docx");
+      const maxBytes = isDocument ? 20 * 1024 * 1024 : 1024 * 1024;
+      if (file.size > maxBytes) {
+        throw new Error(
+          isDocument ? "PDF/DOCX 文档不能超过 20 MiB。" : "TXT/Markdown/CSV 文件不能超过 1 MiB。",
+        );
+      }
+      if (isDocument) {
+        await api.uploadKnowledge(file);
+      } else {
+        await api.addKnowledge(file.name, await file.text());
+      }
       onChanged();
     } catch (reason) {
       onError(reason instanceof Error ? reason.message : "导入失败。");
@@ -470,11 +482,11 @@ function KnowledgeView({ items, onChanged, onError }: KnowledgeViewProps) {
       <PageIntro
         eyebrow="REFERENCE SHELF"
         title="知识库"
-        description="为每次运行提供可控的本地参考。P0 只解析 TXT、Markdown 与 CSV，不抓取链接、不上传文件本身。"
+        description="为每次运行提供可控的本地参考。PDF 与 DOCX 只提取内嵌文本，不做 OCR；原始文档不会保存。"
       />
       <label className={`upload-tile ${busy ? "is-busy" : ""}`}>
         <input
-          accept=".txt,.md,.csv,text/plain,text/csv"
+          accept=".txt,.md,.csv,.pdf,.docx,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           disabled={busy}
           onChange={(event) => {
             void importFile(event.target.files?.[0]);
@@ -485,7 +497,7 @@ function KnowledgeView({ items, onChanged, onError }: KnowledgeViewProps) {
         <span className="upload-symbol">＋</span>
         <span>
           <strong>{busy ? "正在导入…" : "选择一个本地文件"}</strong>
-          <small>.txt · .md · .csv · 上限 1 MB</small>
+          <small>.txt · .md · .csv（1 MB） · .pdf · .docx（20 MiB）</small>
         </span>
         <span className="upload-arrow">↗</span>
       </label>
@@ -502,9 +514,24 @@ function KnowledgeView({ items, onChanged, onError }: KnowledgeViewProps) {
         ) : (
           items.map((item) => (
             <div className="library-row" key={item.id}>
-              <span className="file-name">
+              <span
+                className="file-name"
+                title={
+                  item.source_metadata
+                    ? `SHA-256: ${item.source_metadata.sha256}\n来源大小: ${item.source_metadata.source_size_bytes} bytes\n提取方式: ${item.source_metadata.extraction_method}`
+                    : item.filename
+                }
+              >
                 <span className="file-glyph">▤</span>
-                {item.filename}
+                <span className="file-name-copy">
+                  <span>{item.filename}</span>
+                  {item.source_metadata && (
+                    <small>
+                      {item.source_metadata.extraction_method} ·{" "}
+                      {item.source_metadata.extracted_bytes.toLocaleString()} bytes
+                    </small>
+                  )}
+                </span>
               </span>
               <span className="file-type">{item.file_type.toUpperCase()}</span>
               <span className="file-state">{item.enabled ? "已启用" : "已停用"}</span>
